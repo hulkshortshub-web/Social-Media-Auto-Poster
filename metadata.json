@@ -1,0 +1,7 @@
+{
+  "name": "TrendPulse AI: Social Media Automator",
+  "description": "An advanced AI-powered tool that monitors trending USA news, generates high-quality 'human-like' Facebook posts with captions and AI-generated images, and automates posting to your Facebook page.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
