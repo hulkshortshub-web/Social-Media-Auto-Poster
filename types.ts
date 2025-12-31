@@ -24,6 +24,10 @@ export interface StylePreset {
   textColor?: string;
   backgroundColor?: string;
   accentColor?: string;
+  // Artistic parameters
+  lighting?: string;
+  cameraAngle?: string;
+  depthOfField?: string;
 }
 
 export interface BrandConfig {

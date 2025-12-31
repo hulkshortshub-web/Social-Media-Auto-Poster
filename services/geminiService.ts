@@ -24,7 +24,7 @@ export const getTrendingNews = async (): Promise<{ articles: NewsArticle[], sour
 
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
-    contents: `ACT AS A REAL-TIME NEWS ANALYST FOR A HIGH-END MEDIA NETWORK. 
+    contents: `ACT AS A REAL-TIME NEWS ANALYST. 
     CURRENT SYSTEM TIME: ${currentTimeStr} (USA Eastern Time).
     
     TASK: Use Google Search to find the absolute LATEST breaking news in the USA.
@@ -79,35 +79,35 @@ export const generatePostContent = async (
   const ai = getAI();
   
   const toneMap = {
-    breaking: "Urgent, relatable, like a text from a smart friend. No professional jargon.",
-    analytical: "Smart and deep but told through a conversational story. Use 'I' or 'We'.",
-    optimistic: "Genuine warmth, personal and uplifting. Focus on the human face of the story.",
-    urgent: "Immediate impact, breathless but grounded in real reality."
+    breaking: "Urgent, like you're the first person in your group chat to see this. Breathless but real.",
+    analytical: "Thoughtful and observational. Use phrases like 'I've been watching this' or 'Here's the real story'.",
+    optimistic: "Genuine warmth. Focus on the win for normal people. Avoid 'inspiring' clichés.",
+    urgent: "Immediate impact. Direct and visceral. Talk about what this means for people's daily lives right now."
   };
 
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
-    contents: `You are a human social media editor who actually cares about the news. 
-    
+    contents: `You are a professional human social media editor for a major news network. Write a post about this story.
+
     STORY: ${article.title}
     SUMMARY: ${article.summary}
     CATEGORY: ${article.category || 'ANALYSIS'}
     TONE: ${toneMap[tone]}
     
     CRITICAL HUMAN-STYLE RULES:
-    1. NO AI CLICHÉS: Never use "Unleashing," "Diving deep," "The wait is over," or "Step into."
-    2. USE CONTRACTIONS: Use "don't," "it's," "can't." It sounds more natural.
-    3. VARIATION: Use short, punchy sentences followed by longer ones.
-    4. EMOTION: Mention how this affects real people on the ground.
-    5. conversational: Ask a rhetorical question or end with a thought-provoking line.
+    1. ABSOLUTELY NO AI WORDS: Never use "delve", "tapestry", "unleash", "elevate", "beacon", "pivotal", "essential", "crucial", or "realm". 
+    2. CONTRACTIONS: Use "don't", "it's", "can't", "we're", "should've".
+    3. THE VOICE: React to the news. Start with a hook that stops the scroll (e.g., "This changes everything we thought about the economy.", "Wait until you see how this is actually playing out.").
+    4. HASHTAGS: Provide 3-4 hashtags that are EXTREMELY SPECIFIC and RELEVANT to the entities and events in this news (e.g., if it's about a specific politician or policy, use their name or the policy name). No generic tags like #AI or #Love.
+    5. NO RECAPS: We already see the headline. Give us the *vibe* or the *implication*.
 
     TASK:
-    1. Write a CAPTION that a human would actually post. It should feel candid and authentic.
-    2. Generate 4 relevant, un-branded hashtags.
+    1. Write a CAPTION that feels like it was typed by a human with an opinion.
+    2. Generate specific relevant hashtags.
     3. Create an IMAGE PROMPT for a candid photograph. 
        - Describe a "caught in the moment" shot. 
-       - Include details like "natural skin texture, slight imperfections, raw lighting."
-       - Mention "unposed, non-centered composition, background blur but with realistic depth."
+       - Subject MUST be the specific person/group from the news.
+       - Focus on high-fidelity textures, journalistic grit, and natural unposed lighting.
     
     Return result as JSON.`,
     config: {
@@ -130,17 +130,28 @@ export const generatePostContent = async (
 export const fetchAIImage = async (
   prompt: string, 
   styleDescription: string,
-  options: { aspectRatio?: "1:1" | "3:4" | "4:3" | "9:16" | "16:9" } = {}
+  options: { 
+    aspectRatio?: "1:1" | "3:4" | "4:3" | "9:16" | "16:9",
+    lighting?: string,
+    cameraAngle?: string,
+    depthOfField?: string
+  } = {}
 ): Promise<string> => {
   const ai = getAI();
   const aspectRatio = options.aspectRatio || "3:4";
   
+  const artisticConstraints = [
+    options.lighting ? `Lighting: ${options.lighting}` : '',
+    options.cameraAngle ? `Camera Angle: ${options.cameraAngle}` : '',
+    options.depthOfField ? `Depth of Field: ${options.depthOfField}` : ''
+  ].filter(Boolean).join(', ');
+
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash-image',
     contents: { 
       parts: [
         { 
-          text: `A RAW, CANDID PHOTOGRAPH. ${styleDescription}. ${prompt}. Captured on a real camera, natural unedited skin tones, authentic messy environment, no plastic smoothing, realistic lighting, slight film grain, unposed human expression.` 
+          text: `A RAW, CANDID PRESS PHOTOGRAPH. ${styleDescription}. ${prompt}. ${artisticConstraints}. Professional journalistic capture, realistic skin textures, unposed authentic moment, documentary style, unedited grit.` 
         }
       ] 
     },
