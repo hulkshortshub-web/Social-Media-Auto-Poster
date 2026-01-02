@@ -6,28 +6,16 @@ export interface FBConfig {
 }
 
 export type EditorialTone = 'breaking' | 'analytical' | 'optimistic' | 'urgent';
-export type BrandingLayout = 'classic' | 'corner-tag' | 'bold-header' | 'modern-sidebar' | 'impact-minimal' | 'news-strip' | 'cinematic-bar';
-
-export interface CaptionTemplate {
-  id: string;
-  name: string;
-  structure: string; 
-}
+export type BrandingLayout = 'broadcast' | 'classic' | 'modern';
 
 export interface StylePreset {
   id: string;
   name: string;
   visualPrompt: string;
   aspectRatio?: "1:1" | "3:4" | "4:3" | "9:16" | "16:9";
-  layout?: BrandingLayout;
-  fontFamily?: string;
-  textColor?: string;
-  backgroundColor?: string;
-  accentColor?: string;
-  // Artistic parameters
-  lighting?: string;
-  cameraAngle?: string;
-  depthOfField?: string;
+  lighting: string;
+  cameraAngle: string;
+  depthOfField: string;
 }
 
 export interface BrandConfig {
@@ -56,6 +44,7 @@ export interface ScheduledPost {
   imagePrompt: string;
   imageUrl?: string;
   scheduledTime: number;
+  highlightWords?: string[];
 }
 
 export interface PostInsights {
@@ -73,15 +62,19 @@ export interface GeneratedPost {
   imageUrl?: string;
   status: 'draft' | 'posted' | 'failed';
   timestamp: number;
-  article?: NewsArticle; // Added to facilitate regeneration
+  article?: NewsArticle;
   insights?: PostInsights;
+  highlightWords?: string[];
 }
 
-export interface AnalyticsSummary {
-  totalReach: number;
-  avgEngagement: number;
-  followerGrowth: number;
-  totalPosts: number;
+export interface Testimonial {
+  id: string;
+  name: string;
+  role: string;
+  content: string;
+  rating: number;
+  location: string;
+  avatar?: string;
 }
 
 export interface GroundingSource {
