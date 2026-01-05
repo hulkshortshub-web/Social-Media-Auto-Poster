@@ -37,9 +37,12 @@ export const getTrendingNews = async (): Promise<{ articles: NewsArticle[], sour
   return callWithRetry(async () => {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Find the top 8 most viral and recent breaking news stories from the USA today (Time: ${currentTimeStr}). 
-      Focus on major events with high engagement potential. 
-      Exclude repetitive or stale topics. Return valid JSON.`,
+      contents: `Perform a dual search for today (${currentTimeStr}):
+      1. Find the top 4 breaking news stories from the USA.
+      2. Find 4 highly engaging parenting topics or child upbringing (Tarbiyat) strategies that are currently trending or evergreen (e.g., discipline, emotional intelligence, moral values).
+      
+      For the Parenting articles, focus on advice that helps parents improve their children's character.
+      Return valid JSON.`,
       config: {
         tools: [{ googleSearch: {} }],
         responseMimeType: "application/json",
@@ -57,7 +60,7 @@ export const getTrendingNews = async (): Promise<{ articles: NewsArticle[], sour
                   source: { type: Type.STRING },
                   timestamp: { type: Type.STRING },
                   viralScore: { type: Type.NUMBER },
-                  category: { type: Type.STRING },
+                  category: { type: Type.STRING, description: "Must be either 'News' or 'Parenting'" },
                   suggestedThemes: { type: Type.ARRAY, items: { type: Type.STRING } }
                 },
                 required: ["title", "summary", "url", "source", "timestamp", "category", "viralScore"]
@@ -85,19 +88,23 @@ export const generatePostContent = async (
 ): Promise<{ caption: string, imagePrompt: string, hashtags: string[], highlightWords: string[] }> => {
   const ai = getAI();
   
+  const isParenting = article.category?.toLowerCase() === 'parenting';
+
   return callWithRetry(async () => {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Transform this news article into a high-engagement Facebook post:
+      contents: `Transform this content into a high-engagement Facebook post:
+      TYPE: ${article.category}
       STORY: ${article.title}
       SUMMARY: ${article.summary}
       
       GUIDELINES:
-      - Write a short, punchy caption.
-      - Be journalistic yet conversational.
-      - Generate a descriptive image prompt for a professional press photo.
-      - Pick 2-3 "highlight" words for the graphic.
-      - Include 3-4 trending hashtags.
+      - If category is 'Parenting', use a 'Mentor/Counselor' tone. Focus on child 'Tarbiyat' (upbringing). Use words like 'Empathy', 'Growth', 'Character'.
+      - If category is 'News', use an 'Urgent/Journalistic' tone.
+      - Write a short, punchy caption that encourages comments and shares.
+      - For Parenting: Include a 'Tip for Parents' at the end of the caption.
+      - Generate a descriptive image prompt for a high-quality photo.
+      - Pick 2-3 'highlight' words for the graphic text.
       
       Return JSON.`,
       config: {
@@ -125,7 +132,7 @@ export const fetchAIImage = async (prompt: string, style: string, options: { asp
   return callWithRetry(async () => {
     const res = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      contents: { parts: [{ text: `Professional press photography, news photo: ${prompt}. ${style}. High detail, 8k, realistic.` }] },
+      contents: { parts: [{ text: `High quality professional photography: ${prompt}. ${style}. Cinematic lighting, emotional depth, 8k.` }] },
       config: { imageConfig: { aspectRatio: options.aspectRatio || "3:4" } }
     });
 

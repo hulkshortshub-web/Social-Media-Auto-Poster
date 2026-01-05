@@ -8,12 +8,16 @@ import {
 import { 
   FBConfig, 
   NewsArticle, 
-  GeneratedPost 
+  GeneratedPost,
+  ScheduledPost
 } from './types';
 
 const FB_BLUE = '#1877F2';
-const APP_NAME = "US NEWS LIVE";
-const POST_INTERVAL = 120000; // 2 minutes
+const NEWS_RED = '#EF4444';
+const PARENTING_GREEN = '#10B981';
+const PARENTING_GOLD = '#F59E0B';
+const APP_NAME = "US NEWS & PARENTING";
+const POST_INTERVAL = 120000; // 2 minutes for autopilot
 
 const safeSave = (key: string, data: any) => {
   try {
@@ -41,6 +45,10 @@ const base64ToBlob = (base64: string): Blob => {
   return new Blob([uInt8Array], { type: contentType });
 };
 
+/**
+ * Generates a branded image for social media posts.
+ * Dynamically selects templates based on the category.
+ */
 const generatePostImage = async (
   base64Image: string, 
   headline: string, 
@@ -55,33 +63,70 @@ const generatePostImage = async (
       const ctx = canvas.getContext('2d');
       if (!ctx) return reject("Canvas failure");
 
+      // Dimensions based on aspect ratio
       let width = 1080;
-      let height = 1350; 
+      let height = 1350; // Standard 4:5
       if (options.aspectRatio === '1:1') height = 1080;
 
       canvas.width = width;
       canvas.height = height;
 
+      // Draw original image
       ctx.drawImage(img, 0, 0, width, height);
 
-      const grad = ctx.createLinearGradient(0, height * 0.4, 0, height);
-      grad.addColorStop(0, 'rgba(0,0,0,0)');
-      grad.addColorStop(0.6, 'rgba(0,0,0,0.8)');
-      grad.addColorStop(1, 'rgba(0,0,0,1)');
+      const isParenting = options.category?.toLowerCase() === 'parenting';
+      
+      // TEMPLATE SELECTION
+      const template = isParenting ? {
+        primary: PARENTING_GREEN,
+        accent: PARENTING_GOLD,
+        gradientStart: 'rgba(6, 78, 59, 0)', // Dark emerald transparent
+        gradientEnd: 'rgba(2, 44, 34, 0.95)',
+        badgeText: "PARENTING HUB",
+        borderRadius: 20
+      } : {
+        primary: FB_BLUE,
+        accent: NEWS_RED,
+        gradientStart: 'rgba(30, 58, 138, 0)', // Deep blue transparent
+        gradientEnd: 'rgba(15, 23, 42, 0.98)',
+        badgeText: "BREAKING NEWS",
+        borderRadius: 4
+      };
+
+      // Bottom Gradient Overlay for readability
+      const grad = ctx.createLinearGradient(0, height * 0.3, 0, height);
+      grad.addColorStop(0, template.gradientStart);
+      grad.addColorStop(0.7, template.gradientEnd);
+      grad.addColorStop(1, 'black');
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, width, height);
 
       const headFont = 'Outfit, sans-serif';
-      const blueColor = FB_BLUE;
 
-      ctx.fillStyle = blueColor;
-      ctx.fillRect(50, 50, 180, 60);
+      // Category Badge (Top Left)
+      ctx.fillStyle = template.primary;
+      // Draw rounded/sharp rect based on template
+      const bWidth = 320;
+      const bHeight = 70;
+      const bx = 50;
+      const by = 50;
+      
+      if (isParenting) {
+        ctx.beginPath();
+        ctx.roundRect(bx, by, bWidth, bHeight, template.borderRadius);
+        ctx.fill();
+      } else {
+        ctx.fillRect(bx, by, bWidth, bHeight);
+      }
+
       ctx.fillStyle = 'white';
       ctx.font = `900 24px ${headFont}`;
       ctx.textAlign = 'center';
-      ctx.fillText("LIVE", 140, 90);
+      ctx.textBaseline = 'middle';
+      ctx.fillText(template.badgeText, bx + (bWidth / 2), by + (bHeight / 2));
 
-      const fontSize = Math.floor(width * 0.07);
+      // HEADLINE RENDERING
+      const fontSize = Math.floor(width * 0.08);
       ctx.font = `900 ${fontSize}px ${headFont}`;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
@@ -102,8 +147,8 @@ const generatePostImage = async (
       });
       lines.push(currentLine);
 
-      const lineHeight = fontSize * 1.1;
-      let y = height - (lines.length * lineHeight) - 80;
+      const lineHeight = fontSize * 1.05;
+      let y = height - (lines.length * lineHeight) - 100;
 
       lines.forEach(line => {
         let x = 50;
@@ -113,29 +158,44 @@ const generatePostImage = async (
             hw.toUpperCase().replace(/[^\w]/g, '') === cleanWord
           );
 
-          ctx.fillStyle = isHighlight ? blueColor : 'white';
+          // Shadow for text depth
+          ctx.shadowColor = 'rgba(0,0,0,0.5)';
+          ctx.shadowBlur = 15;
+          ctx.shadowOffsetX = 4;
+          ctx.shadowOffsetY = 4;
+
+          ctx.fillStyle = isHighlight ? template.accent : 'white';
           ctx.fillText(word, x, y);
+          
+          // Reset shadow for measurements
+          ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
+          
           x += ctx.measureText(word + ' ').width;
         });
         y += lineHeight;
       });
 
-      resolve(canvas.toDataURL('image/jpeg', 0.9));
+      resolve(canvas.toDataURL('image/jpeg', 0.95));
     };
-    img.onerror = () => reject("Image failed");
+    img.onerror = () => reject("Image loading failed");
     img.src = base64Image;
   });
 };
 
 const App: React.FC = () => {
   const [fbConfig, setFbConfig] = useState<FBConfig | null>(() => getSafeLocalStorage('fb_config'));
-  const [activeTab, setActiveTab] = useState<'monitor' | 'archive' | 'settings'>('monitor');
+  const [activeTab, setActiveTab] = useState<'monitor' | 'scheduled' | 'archive' | 'settings'>('monitor');
   const [isAutopilot, setIsAutopilot] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [latestNews, setLatestNews] = useState<NewsArticle[]>([]);
   const [posts, setPosts] = useState<GeneratedPost[]>(() => getSafeLocalStorage('generated_posts_live') || []);
+  const [scheduledPosts, setScheduledPosts] = useState<ScheduledPost[]>(() => getSafeLocalStorage('scheduled_posts_v1') || []);
   const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [schedulingPost, setSchedulingPost] = useState<any | null>(null);
   
   const [processedArticles, setProcessedArticles] = useState<Set<string>>(() => {
     const saved = getSafeLocalStorage('processed_v4');
@@ -144,14 +204,15 @@ const App: React.FC = () => {
 
   useEffect(() => {
     safeSave('generated_posts_live', posts);
+    safeSave('scheduled_posts_v1', scheduledPosts);
     safeSave('processed_v4', Array.from(processedArticles));
     if (fbConfig) safeSave('fb_config', fbConfig);
-  }, [posts, fbConfig, processedArticles]);
+  }, [posts, fbConfig, processedArticles, scheduledPosts]);
 
   const addLog = (msg: string) => setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 30));
 
   const uploadToFacebook = async (base64Image: string, caption: string) => {
-    if (!fbConfig) throw new Error("Credentials missing. Check Settings.");
+    if (!fbConfig) throw new Error("Credentials missing.");
     const blob = base64ToBlob(base64Image);
     const formData = new FormData();
     formData.append('source', blob);
@@ -168,14 +229,14 @@ const App: React.FC = () => {
     if (processedArticles.has(article.title) || isProcessing) return;
     
     setIsProcessing(true);
-    addLog(`AUTO: Generating Post -> ${article.title}`);
+    addLog(`AUTO: Processing ${article.category} -> ${article.title}`);
     
     try {
       const content = await generatePostContent(article, { name: APP_NAME, defaultTone: 'urgent', activeTemplateId: 't1', activeStyleId: 's1' }, "", 'urgent');
-      const rawImg = await fetchAIImage(content.imagePrompt, "Breaking news style", { aspectRatio: "3:4" });
+      const rawImg = await fetchAIImage(content.imagePrompt, article.category === 'Parenting' ? "Warm, educational photography" : "Breaking news style", { aspectRatio: "3:4" });
       const brandedImg = await generatePostImage(rawImg, article.title, content.highlightWords, { category: article.category });
       
-      addLog(`UPLINK: Uploading to Facebook...`);
+      addLog(`UPLINK: Streaming to Facebook...`);
       const fbId = await uploadToFacebook(brandedImg, content.caption + "\n\n" + content.hashtags.join(' '));
 
       const newPost: GeneratedPost = {
@@ -185,20 +246,18 @@ const App: React.FC = () => {
         caption: content.caption,
         imageUrl: brandedImg,
         status: 'posted',
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        article: article
       };
 
       setPosts(prev => [newPost, ...prev]);
       setProcessedArticles(prev => new Set(prev).add(article.title));
-      addLog(`SUCCESS: Post Live! ID: ${fbId}`);
+      addLog(`SUCCESS: ${article.category} content is Live!`);
       setIsQuotaExceeded(false);
     } catch (e: any) {
       if (e.message.includes('429') || e.message.includes('RESOURCE_EXHAUSTED')) {
-        addLog(`QUOTA: Gemini API limit reached. Cooling down...`);
+        addLog(`QUOTA: Gemini limit. Cooling down...`);
         setIsQuotaExceeded(true);
-      } else if (e.message.includes('limit') || e.message.includes('spam')) {
-        addLog(`SKIP: Facebook Limit. Moving to next story.`);
-        setProcessedArticles(prev => new Set(prev).add(article.title)); 
       } else {
         addLog(`ERROR: ${e.message}`);
       }
@@ -208,89 +267,84 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    let timer: any;
-    const run = async () => {
-      if (!fbConfig || !isAutopilot) return;
-      
-      addLog("SCANNER: Checking trends...");
-      try {
-        const { articles } = await getTrendingNews();
-        setLatestNews(articles);
-        const next = articles.find(a => !processedArticles.has(a.title));
-        if (next) {
-          await processArticle(next);
-        } else {
-          addLog("SCANNER: Page is fully updated.");
-        }
-        setIsQuotaExceeded(false);
-      } catch (e: any) {
-        if (e.message.includes('429') || e.message.includes('RESOURCE_EXHAUSTED')) {
-           setIsQuotaExceeded(true);
-           addLog(`QUOTA: System rate limited. Waiting for reset.`);
-        } else {
-           addLog(`FAULT: Scanner error - ${e.message}`);
+    const checkSchedule = async () => {
+      const now = Date.now();
+      const duePosts = scheduledPosts.filter(p => p.scheduledTime <= now);
+      if (duePosts.length === 0) return;
+      for (const p of duePosts) {
+        try {
+          addLog(`SCHEDULER: Releasing -> ${p.article.title}`);
+          const fbId = await uploadToFacebook(p.imageUrl || '', p.caption);
+          const newPost: GeneratedPost = {
+            id: p.id,
+            fbPostId: fbId,
+            articleTitle: p.article.title,
+            caption: p.caption,
+            imageUrl: p.imageUrl,
+            status: 'posted',
+            timestamp: Date.now(),
+            article: p.article
+          };
+          setPosts(prev => [newPost, ...prev]);
+          setScheduledPosts(prev => prev.filter(item => item.id !== p.id));
+          addLog(`SUCCESS: Scheduled ${p.article.category} published!`);
+        } catch (e: any) {
+          addLog(`FAULT: ${e.message}`);
         }
       }
     };
+    const interval = setInterval(checkSchedule, 60000);
+    return () => clearInterval(interval);
+  }, [scheduledPosts, fbConfig]);
 
-    if (isAutopilot && fbConfig) {
-      run();
-      timer = setInterval(run, POST_INTERVAL);
-    }
+  useEffect(() => {
+    let timer: any;
+    const run = async () => {
+      if (!fbConfig || !isAutopilot) return;
+      addLog("SCANNER: Searching for Trends & parenting tips...");
+      try {
+        const { articles } = await getTrendingNews();
+        setLatestNews(articles);
+        const next = articles.find(a => !processedArticles.has(a.title) && !scheduledPosts.some(s => s.article.title === a.title));
+        if (next) await processArticle(next);
+        setIsQuotaExceeded(false);
+      } catch (e: any) {
+        if (e.message.includes('429') || e.message.includes('RESOURCE_EXHAUSTED')) setIsQuotaExceeded(true);
+        else addLog(`FAULT: ${e.message}`);
+      }
+    };
+    if (isAutopilot && fbConfig) { run(); timer = setInterval(run, POST_INTERVAL); }
     return () => clearInterval(timer);
-  }, [isAutopilot, fbConfig, processedArticles.size]);
+  }, [isAutopilot, fbConfig, processedArticles.size, scheduledPosts.length]);
 
-  const handleSettingsSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const pid = (e.currentTarget.elements.namedItem('pid') as HTMLInputElement).value;
-    const at = (e.currentTarget.elements.namedItem('at') as HTMLTextAreaElement).value;
-
-    if (pid && at) {
-      const newConfig = { pageId: pid, accessToken: at };
-      setFbConfig(newConfig);
-      safeSave('fb_config', newConfig);
-      addLog("SYSTEM: Facebook Credentials Saved.");
-      setActiveTab('monitor');
-      alert("Settings Saved Successfully!");
-    } else {
-      alert("Error: Please provide both Page ID and Access Token.");
-    }
-  };
-
-  const clearHistory = () => {
-    if (confirm("Reset posting history? The tool will be able to post these stories again.")) {
-      setProcessedArticles(new Set());
-      localStorage.removeItem('processed_v4');
-      addLog("SYSTEM: Posting History Reset.");
-    }
+  const handleManualSchedule = async (article: NewsArticle) => {
+    setIsProcessing(true);
+    addLog(`DRAFT: Building parenting/news assets...`);
+    try {
+      const content = await generatePostContent(article, { name: APP_NAME, defaultTone: 'urgent', activeTemplateId: 't1', activeStyleId: 's1' }, "", 'urgent');
+      const rawImg = await fetchAIImage(content.imagePrompt, article.category === 'Parenting' ? "Empathetic, cinematic photo" : "Journalistic press photo", { aspectRatio: "3:4" });
+      const brandedImg = await generatePostImage(rawImg, article.title, content.highlightWords, { category: article.category });
+      setSchedulingPost({ article, caption: content.caption + "\n\n" + content.hashtags.join(' '), imageUrl: brandedImg });
+    } catch (e: any) { addLog(`FAULT: ${e.message}`); } finally { setIsProcessing(false); }
   };
 
   return (
     <div className="min-h-screen bg-[#F0F2F5] pb-20 font-ui">
       <header className="bg-white border-b sticky top-0 z-50 px-8 py-4 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-[#1877F2] rounded-xl flex items-center justify-center text-white font-black italic shadow-lg">US</div>
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white font-black italic shadow-lg ${isAutopilot ? 'bg-[#10B981]' : 'bg-[#1877F2]'}`}>US</div>
           <h1 className="text-xl font-black tracking-tighter text-[#1C1E21] uppercase leading-none">{APP_NAME}</h1>
         </div>
-        
         <div className="flex items-center gap-6">
           <div className="flex bg-gray-100 p-1 rounded-xl font-bold text-[10px] uppercase">
-            {['monitor', 'archive', 'settings'].map(t => (
-              <button key={t} onClick={() => setActiveTab(t as any)} className={`px-5 py-2 rounded-lg transition-all ${activeTab === t ? 'bg-white text-[#1877F2] shadow-sm scale-105' : 'text-gray-400 hover:text-gray-600'}`}>{t}</button>
+            {['monitor', 'scheduled', 'archive', 'settings'].map(t => (
+              <button key={t} onClick={() => setActiveTab(t as any)} className={`px-5 py-2 rounded-lg transition-all ${activeTab === t ? 'bg-white text-[#1877F2] shadow-sm scale-105' : 'text-gray-400'}`}>
+                {t} {t === 'scheduled' && scheduledPosts.length > 0 && <span className="ml-1 bg-blue-500 text-white px-1 rounded-full">{scheduledPosts.length}</span>}
+              </button>
             ))}
           </div>
-          <button 
-            onClick={() => {
-              if (!fbConfig) {
-                setActiveTab('settings');
-                alert("Please save your Facebook credentials first.");
-                return;
-              }
-              setIsAutopilot(!isAutopilot);
-            }}
-            className={`px-6 py-2 rounded-full font-black text-[10px] uppercase tracking-widest transition-all shadow-md ${isAutopilot ? 'bg-green-500 text-white animate-pulse' : 'bg-white text-gray-400 border hover:bg-gray-50'}`}
-          >
-            {isAutopilot ? 'AUTOPILOT: ACTIVE' : 'AUTOPILOT: STANDBY'}
+          <button onClick={() => { if(!fbConfig) { setActiveTab('settings'); alert("Config first."); return; } setIsAutopilot(!isAutopilot); }} className={`px-6 py-2 rounded-full font-black text-[10px] uppercase tracking-widest shadow-md ${isAutopilot ? 'bg-green-500 text-white animate-pulse' : 'bg-white text-gray-400'}`}>
+            {isAutopilot ? 'AUTOPILOT: ON' : 'AUTOPILOT: OFF'}
           </button>
         </div>
       </header>
@@ -299,82 +353,80 @@ const App: React.FC = () => {
         {activeTab === 'monitor' && (
           <div className="grid grid-cols-12 gap-8">
             <div className="col-span-4 bg-white rounded-[32px] p-8 border shadow-sm h-[650px] flex flex-col">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-[10px] font-black uppercase text-gray-400 tracking-widest">System Pulse</h2>
-                <div className={`w-2 h-2 rounded-full ${isAutopilot ? 'bg-green-500 animate-ping' : 'bg-gray-300'}`}></div>
-              </div>
+              <h2 className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-6">Uplink Activity</h2>
               <div className="flex-1 overflow-y-auto space-y-3 font-mono text-[10px] pr-2 custom-scrollbar">
                 {logs.map((l, i) => (
-                  <div key={i} className={`p-3 rounded-xl border-b border-gray-50 transition-all ${l.includes('SUCCESS') ? 'text-green-600 font-bold bg-green-50/50' : l.includes('QUOTA') ? 'text-orange-600 font-bold bg-orange-50/50' : 'text-gray-500'}`}>{l}</div>
+                  <div key={i} className={`p-3 rounded-xl border-b border-gray-50 ${l.includes('SUCCESS') ? 'text-green-600 font-bold bg-green-50' : 'text-gray-500'}`}>{l}</div>
                 ))}
-                {logs.length === 0 && <div className="text-gray-300 italic">Listening for broadcast signals...</div>}
               </div>
             </div>
 
             <div className="col-span-8 space-y-4">
-              {isQuotaExceeded && (
-                <div className="bg-gradient-to-r from-orange-500 to-red-500 p-8 rounded-[32px] text-white shadow-xl animate-pulse flex items-center gap-6">
-                  <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-2xl">⚠️</div>
-                  <div>
-                    <h3 className="text-lg font-black uppercase tracking-tighter italic">Gemini Quota Exceeded</h3>
-                    <p className="text-xs font-bold opacity-90 uppercase tracking-widest">System is cooling down. Autopilot will resume shortly.</p>
-                  </div>
-                </div>
-              )}
-              
-              <div className="bg-[#1877F2] p-8 rounded-[32px] text-white shadow-xl flex items-center justify-between">
+              <div className="bg-gradient-to-r from-[#1877F2] to-[#10B981] p-8 rounded-[32px] text-white mb-6 shadow-xl flex items-center justify-between">
                 <div>
-                  <h3 className="text-2xl font-black uppercase tracking-tighter italic">Global News Control</h3>
-                  <p className="text-blue-100 text-xs font-bold uppercase tracking-widest mt-1">Status: {isAutopilot ? 'Streaming' : 'Paused'}</p>
+                  <h3 className="text-2xl font-black uppercase tracking-tighter italic leading-none">Global Desktop</h3>
+                  <p className="text-white/80 text-[10px] font-bold uppercase tracking-widest mt-2">Scanning News & Parenting Trends</p>
                 </div>
-                <button onClick={clearHistory} className="bg-white/10 hover:bg-white/20 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-white/20 transition-all">Clear Memory</button>
+                <button onClick={() => { setProcessedArticles(new Set()); addLog("SYSTEM: Cleared."); }} className="bg-white/10 px-6 py-3 rounded-2xl text-[10px] font-black uppercase border border-white/20">Purge Memory</button>
               </div>
 
-              {latestNews.length === 0 && !isQuotaExceeded && (
-                <div className="p-24 text-center text-gray-300 font-black uppercase tracking-[0.2em] bg-white rounded-[40px] border border-dashed">Scanning Satellite Feed...</div>
-              )}
-
-              {latestNews.map((n, i) => (
-                <div key={i} className={`bg-white p-8 rounded-[40px] border flex items-center justify-between transition-all group ${processedArticles.has(n.title) ? 'opacity-40 grayscale-[0.5]' : 'hover:shadow-2xl hover:-translate-y-1'}`}>
-                  <div className="max-w-[70%]">
-                    <span className="text-[10px] font-black text-[#1877F2] bg-blue-50 px-4 py-1.5 rounded-xl uppercase tracking-widest">{n.category || 'News'}</span>
-                    <h3 className="text-xl font-black text-[#1C1E21] mt-3 group-hover:text-[#1877F2] transition-colors leading-tight">{n.title}</h3>
-                    <p className="text-sm text-gray-400 mt-3 line-clamp-2 font-medium leading-relaxed">{n.summary}</p>
+              {latestNews.map((n, i) => {
+                const isPublished = processedArticles.has(n.title);
+                const isParenting = n.category?.toLowerCase() === 'parenting';
+                return (
+                  <div key={i} className={`bg-white p-8 rounded-[40px] border flex items-center justify-between group ${isPublished ? 'opacity-40' : 'hover:shadow-xl'}`}>
+                    <div className="max-w-[65%]">
+                      <span className={`text-[9px] font-black px-4 py-1.5 rounded-xl uppercase tracking-widest ${isParenting ? 'text-emerald-600 bg-emerald-50' : 'text-blue-600 bg-blue-50'}`}>
+                        {n.category || 'News'}
+                      </span>
+                      <h3 className="text-xl font-black text-[#1C1E21] mt-3 group-hover:text-blue-600 transition-colors leading-tight">{n.title}</h3>
+                      <p className="text-sm text-gray-400 mt-2 line-clamp-2">{n.summary}</p>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      {isPublished ? (
+                        <span className="text-[10px] font-black text-green-500 bg-green-50 px-6 py-3 rounded-2xl">Broadcasted</span>
+                      ) : (
+                        <>
+                          <button onClick={() => processArticle(n)} disabled={isProcessing} className="text-[9px] font-black bg-[#1877F2] text-white px-6 py-2.5 rounded-xl uppercase">Post Now</button>
+                          <button onClick={() => handleManualSchedule(n)} disabled={isProcessing} className="text-[9px] font-black bg-white border text-gray-400 px-6 py-2.5 rounded-xl uppercase">Schedule</button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div className="shrink-0 ml-6">
-                    {processedArticles.has(n.title) ? (
-                      <span className="text-[10px] font-black text-green-500 bg-green-50 px-6 py-3 rounded-2xl border border-green-100 shadow-sm uppercase tracking-widest">Published</span>
-                    ) : (
-                      <button 
-                        onClick={() => processArticle(n)} 
-                        disabled={isQuotaExceeded || isProcessing}
-                        className={`text-[10px] font-black px-8 py-4 rounded-2xl uppercase tracking-widest transition-all shadow-lg ${isQuotaExceeded || isProcessing ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-[#1877F2] text-white hover:bg-blue-600 shadow-blue-500/30 active:scale-95'}`}
-                      >
-                        {isProcessing ? 'Working...' : 'Push Live'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
 
-        {activeTab === 'archive' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {posts.length === 0 && <div className="col-span-full py-40 text-center text-gray-300 font-black uppercase tracking-widest">No Broadcasts Archived</div>}
-            {posts.map(p => (
-              <div key={p.id} className="bg-white rounded-[48px] border overflow-hidden shadow-sm hover:shadow-2xl transition-all group">
-                <div className="aspect-[4/5] bg-gray-50 relative overflow-hidden">
-                  <img src={p.imageUrl} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
-                  <div className="absolute top-8 right-8 bg-[#1877F2] text-white text-[9px] font-black px-5 py-2 rounded-2xl shadow-xl uppercase tracking-widest border border-white/20">SENT</div>
+        {activeTab === 'scheduled' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {scheduledPosts.map(p => (
+              <div key={p.id} className="bg-white rounded-[40px] border p-8 flex gap-6 shadow-sm">
+                <img src={p.imageUrl} className="w-32 aspect-square rounded-2xl object-cover" />
+                <div className="flex flex-col justify-between">
+                  <h4 className="font-black text-lg line-clamp-2">{p.article.title}</h4>
+                  <p className="text-[10px] font-black text-blue-500 uppercase">{new Date(p.scheduledTime).toLocaleString()}</p>
+                  <button onClick={() => setScheduledPosts(prev => prev.filter(i => i.id !== p.id))} className="text-red-500 text-[9px] font-bold uppercase mt-2">Delete</button>
                 </div>
-                <div className="p-10">
-                  <h4 className="font-black text-xl text-[#1C1E21] line-clamp-2 leading-tight group-hover:text-[#1877F2] transition-colors">{p.articleTitle}</h4>
-                  <div className="flex items-center justify-between mt-8 border-t pt-6 border-gray-50">
-                    <p className="text-[10px] text-gray-300 uppercase font-black tracking-widest">{new Date(p.timestamp).toLocaleDateString()}</p>
-                    <span className="text-[10px] text-[#1877F2] font-black uppercase tracking-widest">Live View</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeTab === 'archive' && (
+          <div className="grid grid-cols-3 gap-8">
+            {posts.map(p => (
+              <div key={p.id} className="bg-white rounded-[40px] border overflow-hidden shadow-sm group">
+                <div className="aspect-[4/5] bg-gray-50 relative">
+                  <img src={p.imageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                  <div className={`absolute top-6 right-6 text-white text-[8px] font-black px-3 py-1.5 rounded-lg shadow-lg ${p.article?.category?.toLowerCase() === 'parenting' ? 'bg-emerald-500' : 'bg-blue-500'}`}>
+                    {p.article?.category?.toUpperCase() || 'NEWS'}
                   </div>
+                </div>
+                <div className="p-8">
+                  <h4 className="font-black text-lg line-clamp-2 leading-tight">{p.articleTitle}</h4>
+                  <p className="text-[9px] text-gray-300 mt-4 font-black uppercase tracking-widest">{new Date(p.timestamp).toLocaleDateString()}</p>
                 </div>
               </div>
             ))}
@@ -382,57 +434,54 @@ const App: React.FC = () => {
         )}
 
         {activeTab === 'settings' && (
-          <div className="max-w-2xl mx-auto bg-white p-16 rounded-[64px] border shadow-2xl mt-10">
-            <div className="text-center mb-16">
-              <div className="w-24 h-24 bg-[#1877F2] rounded-[32px] flex items-center justify-center mx-auto mb-10 shadow-2xl rotate-3">
-                <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-              </div>
-              <h2 className="text-4xl font-black text-[#1C1E21] tracking-tighter uppercase">Station Access</h2>
-              <p className="text-gray-400 font-bold uppercase tracking-[0.4em] text-[10px] mt-4">Connect to FB Graph Network</p>
-            </div>
-            
-            <form onSubmit={handleSettingsSubmit} className="space-y-10">
-              <div className="space-y-4">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-8">FB Page ID</label>
-                <input 
-                  name="pid" 
-                  defaultValue={fbConfig?.pageId} 
-                  placeholder="e.g. 10492857123"
-                  required 
-                  className="w-full bg-gray-50 border-2 border-gray-100 p-8 rounded-[32px] font-black text-xl outline-none focus:border-[#1877F2] transition-all text-center" 
-                />
-              </div>
-              <div className="space-y-4">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-8">Page Access Token</label>
-                <textarea 
-                  name="at" 
-                  defaultValue={fbConfig?.accessToken} 
-                  placeholder="EAAB..."
-                  required 
-                  rows={4} 
-                  className="w-full bg-gray-50 border-2 border-gray-100 p-8 rounded-[32px] font-bold text-xs outline-none focus:border-[#1877F2] resize-none text-center transition-all" 
-                />
-              </div>
-              <button 
-                type="submit" 
-                className="w-full bg-[#1877F2] hover:bg-[#166FE5] text-white py-8 rounded-[40px] font-black uppercase text-sm tracking-[0.4em] shadow-2xl shadow-blue-500/40 active:scale-95 transition-all"
-              >
-                Apply Broadcast Token
-              </button>
+          <div className="max-w-xl mx-auto bg-white p-16 rounded-[64px] border shadow-2xl mt-10">
+            <h2 className="text-3xl font-black text-center mb-12 uppercase">Station Config</h2>
+            <form onSubmit={(e: any) => {
+              e.preventDefault();
+              const pid = e.target.pid.value;
+              const at = e.target.at.value;
+              setFbConfig({ pageId: pid, accessToken: at });
+              setActiveTab('monitor');
+            }} className="space-y-8">
+              <input name="pid" defaultValue={fbConfig?.pageId} placeholder="Page ID" className="w-full bg-gray-50 border p-6 rounded-3xl font-black text-center" />
+              <textarea name="at" defaultValue={fbConfig?.accessToken} placeholder="Token" rows={4} className="w-full bg-gray-50 border p-6 rounded-3xl font-bold text-xs text-center" />
+              <button type="submit" className="w-full bg-black text-white py-6 rounded-3xl font-black uppercase tracking-widest">Connect Station</button>
             </form>
-            
-            <p className="mt-12 text-center text-[10px] text-gray-300 font-bold uppercase tracking-widest leading-relaxed px-10">
-              Station uses 256-bit encryption for local credential storage.
-            </p>
           </div>
         )}
       </main>
 
+      {schedulingPost && (
+        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex items-center justify-center p-10">
+          <div className="bg-white w-full max-w-4xl rounded-[56px] p-12 flex gap-12 relative shadow-2xl">
+            <div className="flex-1 space-y-8">
+              <h2 className="text-3xl font-black uppercase italic">Setup Broadcast</h2>
+              <div className="p-6 bg-gray-50 rounded-2xl font-bold text-xl">{schedulingPost.article.title}</div>
+              <input type="datetime-local" id="st" className="w-full p-6 border-2 rounded-3xl font-black text-center text-xl" />
+              <button onClick={() => {
+                const val = (document.getElementById('st') as HTMLInputElement).value;
+                if(!val) return;
+                const st = new Date(val).getTime();
+                const n: ScheduledPost = { id: Math.random().toString(36).substr(2,9), article: schedulingPost.article, caption: schedulingPost.caption, imageUrl: schedulingPost.imageUrl, scheduledTime: st, imagePrompt: '' };
+                setScheduledPosts(p => [...p, n]);
+                setProcessedArticles(prev => new Set(prev).add(schedulingPost.article.title));
+                setSchedulingPost(null);
+                addLog(`SCHEDULED: ${schedulingPost.article.category} post.`);
+              }} className="w-full py-6 bg-blue-600 text-white rounded-3xl font-black uppercase tracking-[0.2em] shadow-xl">Confirm Time</button>
+              <button onClick={()=>setSchedulingPost(null)} className="w-full text-gray-300 font-bold uppercase text-[10px]">Cancel</button>
+            </div>
+            <div className="w-80 aspect-[3/4] rounded-[32px] overflow-hidden border">
+              <img src={schedulingPost.imageUrl} className="w-full h-full object-cover" />
+            </div>
+          </div>
+        </div>
+      )}
+
       {isProcessing && (
-        <div className="fixed inset-0 z-[100] bg-white/90 backdrop-blur-md flex items-center justify-center">
+        <div className="fixed inset-0 z-[200] bg-white/95 flex items-center justify-center">
           <div className="text-center">
-            <div className="w-24 h-24 border-[8px] border-blue-50 border-t-[#1877F2] rounded-full animate-spin mx-auto mb-10" />
-            <p className="text-[#1877F2] text-2xl font-black uppercase tracking-[0.6em] animate-pulse">Encoding Asset...</p>
+            <div className="w-16 h-16 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mx-auto mb-6" />
+            <p className="text-blue-600 font-black uppercase tracking-widest animate-pulse">Encoding Digital Assets...</p>
           </div>
         </div>
       )}
